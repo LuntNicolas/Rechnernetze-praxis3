@@ -37,40 +37,28 @@ int is_separator(char c) {
     return !isalpha((unsigned char)c);
 }
 
-// MAP function - Fixed to replace non-alpha with '1'
+// MAP function - converts text to word+frequency format
 char *map_function(const char *text) {
-    // First, normalize the text: replace non-alpha with '1', convert to lowercase
-    int len = strlen(text);
-    char *normalized = malloc(len + 1);
-    int ni = 0;
-
-    for (int i = 0; i < len; i++) {
-        if (isalpha((unsigned char)text[i])) {
-            normalized[ni++] = tolower((unsigned char)text[i]);
-        } else {
-            normalized[ni++] = '1';
-        }
-    }
-    normalized[ni] = '\0';
-
-    // Now process the normalized text
     MapResult *results = malloc(sizeof(MapResult) * MAX_WORDS);
     int result_count = 0;
 
+    int len = strlen(text);
     int i = 0;
-    while (i < ni) {
-        // Skip '1's
-        while (i < ni && normalized[i] == '1') {
+
+    while (i < len) {
+        // Skip non-alphabetic characters
+        while (i < len && !isalpha((unsigned char)text[i])) {
             i++;
         }
 
-        if (i >= ni) break;
+        if (i >= len) break;
 
-        // Extract word
+        // Extract word and convert to lowercase
         char word[MAX_WORD_LEN];
         int wi = 0;
-        while (i < ni && normalized[i] != '1' && wi < MAX_WORD_LEN - 1) {
-            word[wi++] = normalized[i++];
+        while (i < len && isalpha((unsigned char)text[i]) && wi < MAX_WORD_LEN - 1) {
+            word[wi++] = tolower((unsigned char)text[i]);
+            i++;
         }
         word[wi] = '\0';
 
@@ -102,9 +90,7 @@ char *map_function(const char *text) {
         }
     }
 
-    free(normalized);
-
-    // Build output string
+    // Build output string: word1111word2111...
     char *output = malloc(MAX_MSG_LEN);
     output[0] = '\0';
     size_t current_len = 0;
@@ -126,7 +112,7 @@ char *map_function(const char *text) {
     return output;
 }
 
-// REDUCE function - Fixed parsing logic
+// REDUCE function - aggregates word frequencies
 char *reduce_function(const char *input) {
     ReduceResult *results = malloc(sizeof(ReduceResult) * MAX_WORDS);
     int result_count = 0;
@@ -169,6 +155,7 @@ char *reduce_function(const char *input) {
             }
         }
 
+        // Default to 1 if no frequency was found
         if (freq == 0) freq = 1;
 
         // Find or add word
@@ -191,7 +178,7 @@ char *reduce_function(const char *input) {
         }
     }
 
-    // Build output
+    // Build output string: word1<freq>word2<freq>...
     char *output = malloc(MAX_MSG_LEN);
     output[0] = '\0';
     size_t current_len = 0;

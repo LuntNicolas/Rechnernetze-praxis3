@@ -109,7 +109,7 @@ void parse_response(char *input) {
     char *ptr = input;
 
     while (*ptr) {
-        // Skip non-alpha
+        // Skip non-alpha characters
         while (*ptr && !isalpha((unsigned char)*ptr)) ptr++;
         if (!*ptr) break;
 
@@ -119,6 +119,7 @@ void parse_response(char *input) {
         while (*ptr && isalpha((unsigned char)*ptr) && wi < MAX_WORD_LEN - 1) {
             word[wi++] = *ptr++;
         }
+        word[wi] = '\0';
 
         if (wi == 0) continue;
 
@@ -146,7 +147,7 @@ void parse_response(char *input) {
     }
 }
 
-// Improved chunking function - ensures we don't split words
+// Improved chunking - ensures we split at word boundaries
 int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
     if (pos + max_size >= text_len) {
         return text_len - pos;
@@ -159,18 +160,16 @@ int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
         chunk_size--;
     }
 
-    // If we went too far back, move forward to find a separator
+    // If we backed up too far, move forward instead
     if (chunk_size < max_size / 2) {
         chunk_size = max_size;
         while (pos + chunk_size < text_len && !is_separator(text[pos + chunk_size])) {
             chunk_size++;
         }
-        // Include the separator
-        if (pos + chunk_size < text_len) {
-            chunk_size++;
-        }
-    } else if (chunk_size > 0) {
-        // Include the separator we found
+    }
+
+    // Skip the separator itself to avoid empty words
+    while (pos + chunk_size < text_len && is_separator(text[pos + chunk_size])) {
         chunk_size++;
     }
 
@@ -198,7 +197,7 @@ int main(int argc, char *argv[]) {
     void *context = zmq_ctx_new();
 
     int text_len = strlen(text);
-    int max_payload = MAX_MSG_LEN - 10; // Leave room for "map" prefix and safety margin
+    int max_payload = MAX_MSG_LEN - 20; // Leave room for "map" prefix and safety
 
     // MAP PHASE - send chunks
     int chunk_idx = 0;
