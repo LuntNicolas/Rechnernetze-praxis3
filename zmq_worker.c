@@ -11,13 +11,8 @@
 
 typedef struct {
     char word[MAX_WORD_LEN];
-    char frequency[MAX_MSG_LEN];
-} MapResult;
-
-typedef struct {
-    char word[MAX_WORD_LEN];
     int frequency;
-} ReduceResult;
+} WordFreq;
 
 typedef struct {
     void *context;
@@ -37,11 +32,12 @@ int is_separator(char c) {
     return !isalpha((unsigned char)c);
 }
 
-// MAP function - converts text to word+frequency format
+// MAP function - converts text to word<count> format (e.g., "the5", "and3")
 char *map_function(const char *text) {
-    MapResult *results = malloc(sizeof(MapResult) * MAX_WORDS);
-    int result_count = 0;
+    WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
+    if (!results) return strdup("");
 
+    int result_count = 0;
     int len = strlen(text);
     int i = 0;
 
@@ -74,39 +70,40 @@ char *map_function(const char *text) {
         }
 
         if (found >= 0) {
-            // Add another '1' to frequency
-            int freq_len = strlen(results[found].frequency);
-            if (freq_len < MAX_MSG_LEN - 1) {
-                results[found].frequency[freq_len] = '1';
-                results[found].frequency[freq_len + 1] = '\0';
-            }
+            results[found].frequency++;
         } else {
             // Add new word
             if (result_count < MAX_WORDS) {
                 strcpy(results[result_count].word, word);
-                strcpy(results[result_count].frequency, "1");
+                results[result_count].frequency = 1;
                 result_count++;
             }
         }
     }
 
-    // Build output string: word1111word2111...
+    // Build output string: word1<count>word2<count>...
     char *output = malloc(MAX_MSG_LEN);
-    output[0] = '\0';
-    size_t current_len = 0;
+    if (!output) {
+        free(results);
+        return strdup("");
+    }
+
+    char *out_ptr = output;
+    size_t remaining = MAX_MSG_LEN - 1;
 
     for (int i = 0; i < result_count; i++) {
-        size_t word_len = strlen(results[i].word);
-        size_t freq_len = strlen(results[i].frequency);
+        char temp[MAX_WORD_LEN + 32];
+        int temp_len = snprintf(temp, sizeof(temp), "%s%d", results[i].word, results[i].frequency);
 
-        if (current_len + word_len + freq_len + 1 < MAX_MSG_LEN) {
-            strcat(output, results[i].word);
-            strcat(output, results[i].frequency);
-            current_len += word_len + freq_len;
-        } else {
+        if ((size_t)temp_len >= remaining) {
             break;
         }
+
+        memcpy(out_ptr, temp, temp_len);
+        out_ptr += temp_len;
+        remaining -= temp_len;
     }
+    *out_ptr = '\0';
 
     free(results);
     return output;
@@ -114,9 +111,10 @@ char *map_function(const char *text) {
 
 // REDUCE function - aggregates word frequencies
 char *reduce_function(const char *input) {
-    ReduceResult *results = malloc(sizeof(ReduceResult) * MAX_WORDS);
-    int result_count = 0;
+    WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
+    if (!results) return strdup("");
 
+    int result_count = 0;
     const char *ptr = input;
 
     while (*ptr) {
@@ -137,18 +135,9 @@ char *reduce_function(const char *input) {
 
         if (wi == 0) continue;
 
-        // Extract frequency
+        // Extract frequency (must be a number)
         int freq = 0;
-
-        // Check if it's a sequence of '1's or a multi-digit number
-        if (*ptr == '1') {
-            // Count consecutive '1's
-            while (*ptr == '1') {
-                freq++;
-                ptr++;
-            }
-        } else if (isdigit((unsigned char)*ptr)) {
-            // Parse as a regular number
+        if (isdigit((unsigned char)*ptr)) {
             while (*ptr && isdigit((unsigned char)*ptr)) {
                 freq = freq * 10 + (*ptr - '0');
                 ptr++;
@@ -180,20 +169,27 @@ char *reduce_function(const char *input) {
 
     // Build output string: word1<freq>word2<freq>...
     char *output = malloc(MAX_MSG_LEN);
-    output[0] = '\0';
-    size_t current_len = 0;
+    if (!output) {
+        free(results);
+        return strdup("");
+    }
+
+    char *out_ptr = output;
+    size_t remaining = MAX_MSG_LEN - 1;
 
     for (int i = 0; i < result_count; i++) {
         char temp[MAX_WORD_LEN + 32];
         int temp_len = snprintf(temp, sizeof(temp), "%s%d", results[i].word, results[i].frequency);
 
-        if (current_len + temp_len + 1 < MAX_MSG_LEN) {
-            strcat(output, temp);
-            current_len += temp_len;
-        } else {
+        if ((size_t)temp_len >= remaining) {
             break;
         }
+
+        memcpy(out_ptr, temp, temp_len);
+        out_ptr += temp_len;
+        remaining -= temp_len;
     }
+    *out_ptr = '\0';
 
     free(results);
     return output;

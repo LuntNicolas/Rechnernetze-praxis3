@@ -123,18 +123,9 @@ void parse_response(char *input) {
 
         if (wi == 0) continue;
 
-        // Extract frequency
+        // Extract frequency (numeric only)
         int freq = 0;
-
-        // Check if it's '1's or a number
-        if (*ptr == '1') {
-            // Count consecutive '1's
-            while (*ptr == '1') {
-                freq++;
-                ptr++;
-            }
-        } else if (isdigit((unsigned char)*ptr)) {
-            // Parse as regular number
+        if (isdigit((unsigned char)*ptr)) {
             while (*ptr && isdigit((unsigned char)*ptr)) {
                 freq = freq * 10 + (*ptr - '0');
                 ptr++;
@@ -228,12 +219,27 @@ int main(int argc, char *argv[]) {
         total_len += strlen(map_results[i]);
     }
 
-    char *combined = malloc(total_len + 1);
-    combined[0] = '\0';
+    char *combined = malloc(total_len + 2);
+    if (!combined) {
+        fprintf(stderr, "Memory allocation failed\n");
+        for (int i = 0; i < map_result_count; i++) {
+            free(map_results[i]);
+        }
+        free(map_results);
+        free(text);
+        free(global_words);
+        zmq_ctx_destroy(context);
+        return 1;
+    }
+
+    char *pos_ptr = combined;
     for (int i = 0; i < map_result_count; i++) {
-        strcat(combined, map_results[i]);
+        size_t len = strlen(map_results[i]);
+        memcpy(pos_ptr, map_results[i], len);
+        pos_ptr += len;
         free(map_results[i]);
     }
+    *pos_ptr = '\0';
     free(map_results);
 
     // REDUCE PHASE
