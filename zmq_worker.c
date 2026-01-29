@@ -32,12 +32,14 @@ int is_separator(char c) {
     return !isalpha((unsigned char)c);
 }
 
-// MAP function - converts text to word<count> format (e.g., "the5", "and3")
+// MAP function - converts text to word1 format (each word occurrence gets frequency 1)
 char *map_function(const char *text) {
-    WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
-    if (!results) return strdup("");
+    char *output = malloc(MAX_MSG_LEN);
+    if (!output) return strdup("");
 
-    int result_count = 0;
+    char *out_ptr = output;
+    size_t remaining = MAX_MSG_LEN - 1;
+
     int len = strlen(text);
     int i = 0;
 
@@ -60,40 +62,9 @@ char *map_function(const char *text) {
 
         if (wi == 0) continue;
 
-        // Check if word already exists in results
-        int found = -1;
-        for (int j = 0; j < result_count; j++) {
-            if (strcmp(results[j].word, word) == 0) {
-                found = j;
-                break;
-            }
-        }
-
-        if (found >= 0) {
-            results[found].frequency++;
-        } else {
-            // Add new word
-            if (result_count < MAX_WORDS) {
-                strcpy(results[result_count].word, word);
-                results[result_count].frequency = 1;
-                result_count++;
-            }
-        }
-    }
-
-    // Build output string: word1<count>word2<count>...
-    char *output = malloc(MAX_MSG_LEN);
-    if (!output) {
-        free(results);
-        return strdup("");
-    }
-
-    char *out_ptr = output;
-    size_t remaining = MAX_MSG_LEN - 1;
-
-    for (int i = 0; i < result_count; i++) {
+        // Output word with frequency 1
         char temp[MAX_WORD_LEN + 32];
-        int temp_len = snprintf(temp, sizeof(temp), "%s%d", results[i].word, results[i].frequency);
+        int temp_len = snprintf(temp, sizeof(temp), "%s1", word);
 
         if ((size_t)temp_len >= remaining) {
             break;
@@ -105,7 +76,6 @@ char *map_function(const char *text) {
     }
     *out_ptr = '\0';
 
-    free(results);
     return output;
 }
 
