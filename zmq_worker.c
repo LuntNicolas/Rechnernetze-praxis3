@@ -52,7 +52,7 @@ char *map_function(const char *text) {
         // Extract word and convert to lowercase
         char word[MAX_WORD_LEN];
         int wi = 0;
-        while (i < len && isalpha((unsigned char)text[i]) && wi < MAX_WORD_LEN - 1) {
+        while (i < len && isalpha((unsigned char)text[i]) && wi < MAX_WORD_LEN - 2) {
             word[wi++] = tolower((unsigned char)text[i]);
             i++;
         }
