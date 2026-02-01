@@ -32,7 +32,8 @@ int is_separator(char c) {
     return !isalpha((unsigned char)c);
 }
 
-// MAP function - converts text to word<count> format (e.g., "the5", "and3")
+// MAP function - converts text to word<ones> format where frequency is represented as string of 1s
+// Example: word appearing 3 times -> "word111"
 char *map_function(const char *text) {
     WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
     if (!results) return strdup("");
@@ -81,7 +82,8 @@ char *map_function(const char *text) {
         }
     }
 
-    // Build output string: word1<count>word2<count>...
+    // Build output string: word<ones>word<ones>...
+    // Frequency is represented as a string of '1' characters
     char *output = malloc(MAX_MSG_LEN);
     if (!output) {
         free(results);
@@ -92,16 +94,24 @@ char *map_function(const char *text) {
     size_t remaining = MAX_MSG_LEN - 1;
 
     for (int i = 0; i < result_count; i++) {
-        char temp[MAX_WORD_LEN + 32];
-        int temp_len = snprintf(temp, sizeof(temp), "%s%d", results[i].word, results[i].frequency);
+        size_t word_len = strlen(results[i].word);
+        int freq = results[i].frequency;
 
-        if ((size_t)temp_len >= remaining) {
+        // Check if we have space for word + frequency (as ones)
+        if (word_len + freq >= remaining) {
             break;
         }
 
-        memcpy(out_ptr, temp, temp_len);
-        out_ptr += temp_len;
-        remaining -= temp_len;
+        // Copy word
+        memcpy(out_ptr, results[i].word, word_len);
+        out_ptr += word_len;
+        remaining -= word_len;
+
+        // Add frequency as string of 1s
+        for (int j = 0; j < freq; j++) {
+            *out_ptr++ = '1';
+            remaining--;
+        }
     }
     *out_ptr = '\0';
 
@@ -110,6 +120,8 @@ char *map_function(const char *text) {
 }
 
 // REDUCE function - aggregates word frequencies
+// Input format: word<ones>word<ones>... where ones are strings of '1' characters
+// Output format: word<number>word<number>... where number is the actual count
 char *reduce_function(const char *input) {
     WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
     if (!results) return strdup("");
@@ -135,13 +147,11 @@ char *reduce_function(const char *input) {
 
         if (wi == 0) continue;
 
-        // Extract frequency (must be a number)
+        // Count the '1' characters (frequency representation from MAP phase)
         int freq = 0;
-        if (isdigit((unsigned char)*ptr)) {
-            while (*ptr && isdigit((unsigned char)*ptr)) {
-                freq = freq * 10 + (*ptr - '0');
-                ptr++;
-            }
+        while (*ptr == '1') {
+            freq++;
+            ptr++;
         }
 
         // Default to 1 if no frequency was found
@@ -167,7 +177,8 @@ char *reduce_function(const char *input) {
         }
     }
 
-    // Build output string: word1<freq>word2<freq>...
+    // Build output string: word<number>word<number>...
+    // Now we output actual numbers
     char *output = malloc(MAX_MSG_LEN);
     if (!output) {
         free(results);
