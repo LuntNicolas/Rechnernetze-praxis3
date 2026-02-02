@@ -53,7 +53,7 @@ char *map_function(const char *text) {
         // Extract word and convert to lowercase
         char word[MAX_WORD_LEN];
         int wi = 0;
-        while (i < len && isalpha((unsigned char)text[i]) && wi < MAX_WORD_LEN - 2) {
+        while (i < len && isalpha((unsigned char)text[i]) && wi < MAX_WORD_LEN - 1) {
             word[wi++] = tolower((unsigned char)text[i]);
             i++;
         }
@@ -98,7 +98,7 @@ char *map_function(const char *text) {
         int freq = results[i].frequency;
 
         // Check if we have space for word + frequency (as ones)
-        if (word_len + freq >= remaining) {
+        if (word_len + freq + 1 >= remaining) {
             break;
         }
 
@@ -128,8 +128,9 @@ char *reduce_function(const char *input) {
 
     int result_count = 0;
     const char *ptr = input;
+    int input_len = strlen(input);
 
-    while (*ptr) {
+    while (*ptr && (ptr - input) < input_len) {
         // Skip non-alphabetic characters
         while (*ptr && !isalpha((unsigned char)*ptr)) {
             ptr++;
@@ -288,6 +289,15 @@ int main(int argc, char *argv[]) {
     pthread_t *threads = malloc(sizeof(pthread_t) * num_ports);
     WorkerArgs *args = malloc(sizeof(WorkerArgs) * num_ports);
     int *running_flags = malloc(sizeof(int) * num_ports);
+
+    if (!threads || !args || !running_flags) {
+        fprintf(stderr, "Memory allocation failed\n");
+        free(threads);
+        free(args);
+        free(running_flags);
+        zmq_ctx_destroy(context);
+        return 1;
+    }
 
     // Start worker threads
     for (int i = 0; i < num_ports; i++) {

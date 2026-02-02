@@ -103,10 +103,10 @@ char *send_request(void *context, const char *port, const char *message) {
     return response;
 }
 
-void parse_response(char *input) {
+void parse_response(const char *input) {
     if (!input || strlen(input) == 0) return;
 
-    char *ptr = input;
+    const char *ptr = input;
 
     while (*ptr) {
         // Skip non-alpha characters
@@ -125,11 +125,9 @@ void parse_response(char *input) {
 
         // Extract frequency (numeric only)
         int freq = 0;
-        if (isdigit((unsigned char)*ptr)) {
-            while (*ptr && isdigit((unsigned char)*ptr)) {
-                freq = freq * 10 + (*ptr - '0');
-                ptr++;
-            }
+        while (*ptr && isdigit((unsigned char)*ptr)) {
+            freq = freq * 10 + (*ptr - '0');
+            ptr++;
         }
 
         if (freq > 0) {
@@ -138,29 +136,33 @@ void parse_response(char *input) {
     }
 }
 
-// Improved chunking - ensures we split at word boundaries
+// FIXED: Improved chunking that properly handles word boundaries
 int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
+    if (pos >= text_len) {
+        return 0;
+    }
+
     if (pos + max_size >= text_len) {
         return text_len - pos;
     }
 
     int chunk_size = max_size;
 
-    // Move back to find a separator
+    // Move back to find a separator (space, punctuation, etc.)
     while (chunk_size > 0 && !is_separator(text[pos + chunk_size])) {
         chunk_size--;
     }
 
-    // If we backed up too far, move forward instead
-    if (chunk_size < max_size / 2) {
+    // If we backed up too much, try moving forward instead
+    if (chunk_size < max_size / 4) {
         chunk_size = max_size;
         while (pos + chunk_size < text_len && !is_separator(text[pos + chunk_size])) {
             chunk_size++;
         }
     }
 
-    // Skip the separator itself to avoid empty words
-    while (pos + chunk_size < text_len && is_separator(text[pos + chunk_size])) {
+    // Include the separator in this chunk
+    if (pos + chunk_size < text_len && is_separator(text[pos + chunk_size])) {
         chunk_size++;
     }
 
@@ -178,6 +180,10 @@ int main(int argc, char *argv[]) {
     char **worker_ports = &argv[2];
 
     global_words = malloc(sizeof(WordCount) * MAX_WORDS);
+    if (!global_words) {
+        fprintf(stderr, "Memory allocation failed\n");
+        return 1;
+    }
 
     char *text = read_file(filename);
     if (!text) {
@@ -188,25 +194,42 @@ int main(int argc, char *argv[]) {
     void *context = zmq_ctx_new();
 
     int text_len = strlen(text);
-    int max_payload = MAX_MSG_LEN - 20; // Leave room for "map" prefix and safety
+    int max_payload = MAX_MSG_LEN - 50; // More conservative safety margin
 
     // MAP PHASE - send chunks
     int chunk_idx = 0;
     int pos = 0;
 
     char **map_results = malloc(sizeof(char *) * 10000);
+    if (!map_results) {
+        fprintf(stderr, "Memory allocation failed\n");
+        free(text);
+        free(global_words);
+        zmq_ctx_destroy(context);
+        return 1;
+    }
     int map_result_count = 0;
 
     while (pos < text_len) {
         int chunk_size = get_chunk_size(text, pos, max_payload, text_len);
+        if (chunk_size == 0) break;
 
         char *message = malloc(MAX_MSG_LEN);
+        if (!message) {
+            fprintf(stderr, "Memory allocation failed\n");
+            break;
+        }
+
         strcpy(message, "map");
         memcpy(message + 3, text + pos, chunk_size);
         message[3 + chunk_size] = '\0';
 
         char *response = send_request(context, worker_ports[chunk_idx % num_workers], message);
-        map_results[map_result_count++] = response;
+        if (map_result_count < 10000) {
+            map_results[map_result_count++] = response;
+        } else {
+            free(response);
+        }
 
         free(message);
         pos += chunk_size;
@@ -216,10 +239,12 @@ int main(int argc, char *argv[]) {
     // Combine map results
     size_t total_len = 0;
     for (int i = 0; i < map_result_count; i++) {
-        total_len += strlen(map_results[i]);
+        if (map_results[i]) {
+            total_len += strlen(map_results[i]);
+        }
     }
 
-    char *combined = malloc(total_len + 2);
+    char *combined = malloc(total_len + 100);
     if (!combined) {
         fprintf(stderr, "Memory allocation failed\n");
         for (int i = 0; i < map_result_count; i++) {
@@ -234,10 +259,12 @@ int main(int argc, char *argv[]) {
 
     char *pos_ptr = combined;
     for (int i = 0; i < map_result_count; i++) {
-        size_t len = strlen(map_results[i]);
-        memcpy(pos_ptr, map_results[i], len);
-        pos_ptr += len;
-        free(map_results[i]);
+        if (map_results[i]) {
+            size_t len = strlen(map_results[i]);
+            memcpy(pos_ptr, map_results[i], len);
+            pos_ptr += len;
+            free(map_results[i]);
+        }
     }
     *pos_ptr = '\0';
     free(map_results);
@@ -249,8 +276,14 @@ int main(int argc, char *argv[]) {
 
     while (pos < combined_len) {
         int chunk_size = get_chunk_size(combined, pos, max_payload, combined_len);
+        if (chunk_size == 0) break;
 
         char *message = malloc(MAX_MSG_LEN);
+        if (!message) {
+            fprintf(stderr, "Memory allocation failed\n");
+            break;
+        }
+
         strcpy(message, "red");
         memcpy(message + 3, combined + pos, chunk_size);
         message[3 + chunk_size] = '\0';
