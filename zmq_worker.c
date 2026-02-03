@@ -20,20 +20,19 @@ typedef struct {
     int *running;
 } WorkerArgs;
 
-// Convert string to lowercase
+// Wandelt String in lowerCase um
 void to_lowercase(char *str) {
     for (int i = 0; str[i]; i++) {
         str[i] = tolower((unsigned char)str[i]);
     }
 }
 
-// Check if character is a word separator
+// schaut Zeichen = Worttrenner
 int is_separator(char c) {
     return !isalpha((unsigned char)c);
 }
 
-// MAP function - converts text to word<ones> format where frequency is represented as string of 1s
-// Example: word appearing 3 times -> "word111"
+// MAP-Funktion
 char *map_function(const char *text) {
     WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
     if (!results) return strdup("");
@@ -43,14 +42,14 @@ char *map_function(const char *text) {
     int i = 0;
 
     while (i < len) {
-        // Skip non-alphabetic characters
+        // Nicht-alphabetische Zeichen überspringen
         while (i < len && !isalpha((unsigned char)text[i])) {
             i++;
         }
 
         if (i >= len) break;
 
-        // Extract word and convert to lowercase
+        // Wort extrahieren und direkt in LowerCase umwandeln
         char word[MAX_WORD_LEN];
         int wi = 0;
         while (i < len && isalpha((unsigned char)text[i]) && wi < MAX_WORD_LEN - 1) {
@@ -61,7 +60,7 @@ char *map_function(const char *text) {
 
         if (wi == 0) continue;
 
-        // Check if word already exists in results
+        // ist Wort in ergebniss
         int found = -1;
         for (int j = 0; j < result_count; j++) {
             if (strcmp(results[j].word, word) == 0) {
@@ -73,7 +72,7 @@ char *map_function(const char *text) {
         if (found >= 0) {
             results[found].frequency++;
         } else {
-            // Add new word
+            // Neues Wort hinzufügen
             if (result_count < MAX_WORDS) {
                 strcpy(results[result_count].word, word);
                 results[result_count].frequency = 1;
@@ -82,8 +81,7 @@ char *map_function(const char *text) {
         }
     }
 
-    // Build output string: word<ones>word<ones>...
-    // Frequency is represented as a string of '1' characters
+    // Ausgabe aufbauen
     char *output = malloc(MAX_MSG_LEN);
     if (!output) {
         free(results);
@@ -97,17 +95,17 @@ char *map_function(const char *text) {
         size_t word_len = strlen(results[i].word);
         int freq = results[i].frequency;
 
-        // Check if we have space for word + frequency (as ones)
+        // Prüfen, ob genug Platz für Wort + Frequenz vorhanden ist
         if (word_len + freq + 1 >= remaining) {
             break;
         }
 
-        // Copy word
+        // Wort kopieren
         memcpy(out_ptr, results[i].word, word_len);
         out_ptr += word_len;
         remaining -= word_len;
 
-        // Add frequency as string of 1s
+        // Frequenz anhängen
         for (int j = 0; j < freq; j++) {
             *out_ptr++ = '1';
             remaining--;
@@ -119,9 +117,7 @@ char *map_function(const char *text) {
     return output;
 }
 
-// REDUCE function - aggregates word frequencies
-// Input format: word<ones>word<ones>... where ones are strings of '1' characters
-// Output format: word<number>word<number>... where number is the actual count
+// REDUCE-Funktion
 char *reduce_function(const char *input) {
     WordFreq *results = malloc(sizeof(WordFreq) * MAX_WORDS);
     if (!results) return strdup("");
@@ -131,14 +127,14 @@ char *reduce_function(const char *input) {
     int input_len = strlen(input);
 
     while (*ptr && (ptr - input) < input_len) {
-        // Skip non-alphabetic characters
+        // Nicht-alphabetische Zeichen überspringen
         while (*ptr && !isalpha((unsigned char)*ptr)) {
             ptr++;
         }
 
         if (!*ptr) break;
 
-        // Extract word
+        // Wort extrahieren
         char word[MAX_WORD_LEN];
         int wi = 0;
         while (*ptr && isalpha((unsigned char)*ptr) && wi < MAX_WORD_LEN - 1) {
@@ -148,17 +144,17 @@ char *reduce_function(const char *input) {
 
         if (wi == 0) continue;
 
-        // Count the '1' characters (frequency representation from MAP phase)
+        // Anzahl der '1' zählen
         int freq = 0;
         while (*ptr == '1') {
             freq++;
             ptr++;
         }
 
-        // Default to 1 if no frequency was found
+        // Falls keine Frequenz gefunden wurde, auf 1 setzen
         if (freq == 0) freq = 1;
 
-        // Find or add word
+        // Wort suchen oder neu anlegen
         int found = -1;
         for (int i = 0; i < result_count; i++) {
             if (strcmp(results[i].word, word) == 0) {
@@ -178,8 +174,7 @@ char *reduce_function(const char *input) {
         }
     }
 
-    // Build output string: word<number>word<number>...
-    // Now we output actual numbers
+    // Ausgabe aufbauen
     char *output = malloc(MAX_MSG_LEN);
     if (!output) {
         free(results);
@@ -207,7 +202,17 @@ char *reduce_function(const char *input) {
     return output;
 }
 
-// Worker thread function
+static void send_response_and_free(void *socket, char *response) {
+    if (!response) {
+        return;
+    }
+    size_t len = strnlen(response, MAX_MSG_LEN - 1);
+    response[len] = '\0';
+    zmq_send(socket, response, len + 1, 0);
+    free(response);
+}
+
+// Thread-Funktion für Worker
 void *worker_thread(void *arg) {
     WorkerArgs *args = (WorkerArgs *)arg;
 
@@ -230,7 +235,7 @@ void *worker_thread(void *arg) {
         char buffer[MAX_MSG_LEN];
         memset(buffer, 0, MAX_MSG_LEN);
 
-        // Set receive timeout
+        // Empfangstimeout setzen
         int timeout = 100;
         zmq_setsockopt(socket, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
 
@@ -244,35 +249,27 @@ void *worker_thread(void *arg) {
 
         char *response = NULL;
 
-        // Parse message type
+        // Nachrichtentyp auswerten
         if (strncmp(buffer, "map", 3) == 0) {
-            // MAP command
+            // MAP-Befehl
             char *payload = buffer + 3;
             response = map_function(payload);
         } else if (strncmp(buffer, "red", 3) == 0) {
-            // REDUCE command
+            // REDUCE-Befehl
             char *payload = buffer + 3;
             response = reduce_function(payload);
         } else if (strncmp(buffer, "rip", 3) == 0) {
-            // RIP command
+            // sauber beenden
             response = strdup("rip");
-            size_t len = strnlen(response, MAX_MSG_LEN - 1);
-            response[len] = '\0';
-            zmq_send(socket, response, len + 1, 0);
-            free(response);
+            send_response_and_free(socket, response);
             *args->running = 0;
             break;
         } else {
-            // Unknown command
+            // Unbekannter Befehl
             response = strdup("");
         }
 
-        if (response) {
-            size_t len = strnlen(response, MAX_MSG_LEN - 1);
-            response[len] = '\0';
-            zmq_send(socket, response, len + 1, 0);
-            free(response);
-        }
+        send_response_and_free(socket, response);
     }
 
     zmq_close(socket);
@@ -303,7 +300,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Start worker threads
+    // Worker-Threads starten
     for (int i = 0; i < num_ports; i++) {
         running_flags[i] = 1;
         args[i].context = context;
@@ -313,7 +310,7 @@ int main(int argc, char *argv[]) {
         pthread_create(&threads[i], NULL, worker_thread, &args[i]);
     }
 
-    // Wait for all threads
+    // Auf alle Threads warten
     for (int i = 0; i < num_ports; i++) {
         pthread_join(threads[i], NULL);
     }

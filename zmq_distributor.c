@@ -14,20 +14,24 @@ typedef struct {
     int frequency;
 } WordCount;
 
+// Globale Wortliste für finale Ergebnis
 WordCount *global_words = NULL;
 int global_word_count = 0;
 pthread_mutex_t word_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+// schaut Zeichen = Worttrenner
 void to_lowercase(char *str) {
     for (int i = 0; str[i]; i++) {
         str[i] = tolower((unsigned char)str[i]);
     }
 }
 
+// Prüft, ob Zeichen ein Worttrenner ist
 int is_separator(char c) {
     return !isalpha((unsigned char)c);
 }
 
+// Fügt Wort hinzu oder erhöht die Frequenz
 void add_word(const char *word, int freq) {
     pthread_mutex_lock(&word_mutex);
 
@@ -48,6 +52,7 @@ void add_word(const char *word, int freq) {
     pthread_mutex_unlock(&word_mutex);
 }
 
+// Sortierung: zuerst nach Frequenz (absteigend), dann alphabetisch
 int compare_words(const void *a, const void *b) {
     WordCount *wa = (WordCount *)a;
     WordCount *wb = (WordCount *)b;
@@ -59,6 +64,7 @@ int compare_words(const void *a, const void *b) {
     return strcmp(wa->word, wb->word);
 }
 
+// Liest komplette Datei in Speicher
 char *read_file(const char *filename) {
     FILE *file = fopen(filename, "r");
     if (!file) {
@@ -77,6 +83,7 @@ char *read_file(const char *filename) {
     return content;
 }
 
+// Sendet eine Anfrage an einen Worker und wartet auf die Antwort
 char *send_request(void *context, const char *port, const char *message) {
     void *socket = zmq_socket(context, ZMQ_REQ);
     if (!socket) {
@@ -103,17 +110,18 @@ char *send_request(void *context, const char *port, const char *message) {
     return response;
 }
 
+// Parst die REDUCE-Antwort
 void parse_response(const char *input) {
     if (!input || strlen(input) == 0) return;
 
     const char *ptr = input;
 
     while (*ptr) {
-        // Skip non-alpha characters
+        // Nicht-Buchstaben überspringen
         while (*ptr && !isalpha((unsigned char)*ptr)) ptr++;
         if (!*ptr) break;
 
-        // Extract word
+        // Wort extrahieren
         char word[MAX_WORD_LEN] = {0};
         int wi = 0;
         while (*ptr && isalpha((unsigned char)*ptr) && wi < MAX_WORD_LEN - 1) {
@@ -123,7 +131,7 @@ void parse_response(const char *input) {
 
         if (wi == 0) continue;
 
-        // Extract frequency (numeric only)
+        // Frequenz extrahieren
         int freq = 0;
         while (*ptr && isdigit((unsigned char)*ptr)) {
             freq = freq * 10 + (*ptr - '0');
@@ -136,7 +144,7 @@ void parse_response(const char *input) {
     }
 }
 
-// FIXED: Improved chunking that properly handles word boundaries
+// Bestimmt Chunk-Grösse für die MAP-Phase
 int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
     if (pos >= text_len) {
         return 0;
@@ -148,12 +156,12 @@ int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
 
     int chunk_size = max_size;
 
-    // Move back to find a separator (space, punctuation, etc.)
+    // Rückwärts nach Trenner suchen
     while (chunk_size > 0 && !is_separator(text[pos + chunk_size])) {
         chunk_size--;
     }
 
-    // If we backed up too much, try moving forward instead
+    // Wenn wir zu weit zurück sind, nach vorne suchen
     if (chunk_size < max_size / 4) {
         chunk_size = max_size;
         while (pos + chunk_size < text_len && !is_separator(text[pos + chunk_size])) {
@@ -161,7 +169,7 @@ int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
         }
     }
 
-    // Include the separator in this chunk
+    // Trenner noch in diesen Chunk aufnehmen
     if (pos + chunk_size < text_len && is_separator(text[pos + chunk_size])) {
         chunk_size++;
     }
@@ -169,7 +177,7 @@ int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
     return chunk_size;
 }
 
-// For reduce input (word + ones), split only between tokens to avoid cutting counts
+// nur zwischen Tokens schneiden
 int get_reduce_chunk_size(const char *text, int pos, int max_size, int text_len) {
     if (pos >= text_len) {
         return 0;
@@ -180,14 +188,14 @@ int get_reduce_chunk_size(const char *text, int pos, int max_size, int text_len)
         return text_len - pos;
     }
 
-    // Look for a boundary: digit followed by alpha
+    // Grenze finden
     for (int i = end; i > pos; i--) {
         if (isalpha((unsigned char)text[i]) && isdigit((unsigned char)text[i - 1])) {
             return i - pos;
         }
     }
 
-    // Fallback: no safe boundary found, return max_size
+    // Fallback
     return max_size;
 }
 
@@ -216,9 +224,9 @@ int main(int argc, char *argv[]) {
     void *context = zmq_ctx_new();
 
     int text_len = strlen(text);
-    int max_payload = MAX_MSG_LEN - 50; // More conservative safety margin
+    int max_payload = MAX_MSG_LEN - 50; // Puffer
 
-    // MAP PHASE - send chunks
+    // MAP-PHASE
     int chunk_idx = 0;
     int pos = 0;
 
@@ -258,7 +266,7 @@ int main(int argc, char *argv[]) {
         chunk_idx++;
     }
 
-    // Combine map results
+    // MAP Ergebnisse
     size_t total_len = 0;
     for (int i = 0; i < map_result_count; i++) {
         if (map_results[i]) {
@@ -291,7 +299,7 @@ int main(int argc, char *argv[]) {
     *pos_ptr = '\0';
     free(map_results);
 
-    // REDUCE PHASE
+    // Reduce
     int combined_len = strlen(combined);
     pos = 0;
     chunk_idx = 0;
@@ -321,7 +329,7 @@ int main(int argc, char *argv[]) {
 
     free(combined);
 
-    // COMBINE and OUTPUT
+    // Sortieren und Ausgeben
     qsort(global_words, global_word_count, sizeof(WordCount), compare_words);
 
     printf("word,frequency\n");
@@ -329,7 +337,7 @@ int main(int argc, char *argv[]) {
         printf("%s,%d\n", global_words[i].word, global_words[i].frequency);
     }
 
-    // RIP - shutdown workers
+    // beenden Worker
     for (int i = 0; i < num_workers; i++) {
         char *response = send_request(context, worker_ports[i], "rip");
         free(response);
