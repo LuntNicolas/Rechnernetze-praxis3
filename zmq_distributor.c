@@ -169,6 +169,28 @@ int get_chunk_size(const char *text, int pos, int max_size, int text_len) {
     return chunk_size;
 }
 
+// For reduce input (word + ones), split only between tokens to avoid cutting counts
+int get_reduce_chunk_size(const char *text, int pos, int max_size, int text_len) {
+    if (pos >= text_len) {
+        return 0;
+    }
+
+    int end = pos + max_size;
+    if (end >= text_len) {
+        return text_len - pos;
+    }
+
+    // Look for a boundary: digit followed by alpha
+    for (int i = end; i > pos; i--) {
+        if (isalpha((unsigned char)text[i]) && isdigit((unsigned char)text[i - 1])) {
+            return i - pos;
+        }
+    }
+
+    // Fallback: no safe boundary found, return max_size
+    return max_size;
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 3) {
         fprintf(stderr, "Usage: %s <file.txt> <worker port 1> ... <worker port n>\n", argv[0]);
@@ -275,7 +297,7 @@ int main(int argc, char *argv[]) {
     chunk_idx = 0;
 
     while (pos < combined_len) {
-        int chunk_size = get_chunk_size(combined, pos, max_payload, combined_len);
+        int chunk_size = get_reduce_chunk_size(combined, pos, max_payload, combined_len);
         if (chunk_size == 0) break;
 
         char *message = malloc(MAX_MSG_LEN);
