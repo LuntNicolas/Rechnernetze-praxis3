@@ -256,7 +256,9 @@ void *worker_thread(void *arg) {
         } else if (strncmp(buffer, "rip", 3) == 0) {
             // RIP command
             response = strdup("rip");
-            zmq_send(socket, response, strlen(response) + 1, 0);
+            size_t len = strnlen(response, MAX_MSG_LEN - 1);
+            response[len] = '\0';
+            zmq_send(socket, response, len + 1, 0);
             free(response);
             *args->running = 0;
             break;
@@ -266,7 +268,9 @@ void *worker_thread(void *arg) {
         }
 
         if (response) {
-            zmq_send(socket, response, strlen(response) + 1, 0);
+            size_t len = strnlen(response, MAX_MSG_LEN - 1);
+            response[len] = '\0';
+            zmq_send(socket, response, len + 1, 0);
             free(response);
         }
     }
